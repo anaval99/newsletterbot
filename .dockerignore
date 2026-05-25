@@ -1,0 +1,10 @@
+.env
+.env.example
+state.json
+.venv
+__pycache__
+*.pyc
+.git
+.gitignore
+.idea
+.vscode

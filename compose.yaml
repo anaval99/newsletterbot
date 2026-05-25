@@ -1,0 +1,8 @@
+services:
+  mailbot:
+    build: .
+    container_name: newsletterbot
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./volumes/botstate:/data

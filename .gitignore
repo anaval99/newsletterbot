@@ -1,0 +1,18 @@
+# secrets and local config
+.env
+.claude
+
+# runtime state (bind-mounted by docker compose)
+volumes/
+state.json
+
+# python
+.venv/
+venv/
+__pycache__/
+*.pyc
+*.pyo
+
+# editors
+.vscode/
+.idea/
