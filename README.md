@@ -76,6 +76,6 @@ State is written to `state.json` next to `bot.py` unless `STATE_FILE` env var is
 ## Limitations
 
 - Forwards body text only — no sender, subject, date, or attachments. Trivial to extend in `extract_body`.
-- Discord message content is capped at 2000 characters; longer bodies are truncated with a `…(truncated)` marker.
+- Posts as a Discord **embed** so Markdown-style links (`[text](url)`) from HTML emails render as clickable links. Embed description is capped at 4096 characters; longer bodies are truncated with a `…(truncated)` marker.
 - Watches `INBOX` only. Add Sieve rules in PurelyMail webmail if you want to filter what lands there.
 - Does not handle `UIDVALIDITY` changes (extremely rare on PurelyMail). If it ever changes, manually reset `state.json`.

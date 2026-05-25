@@ -57,10 +57,14 @@ def extract_body(msg: email.message.EmailMessage) -> str:
 def post_to_discord(text: str) -> None:
     if not text:
         text = "(empty message)"
-    # Discord message content limit is 2000 chars
-    if len(text) > 1990:
-        text = text[:1990] + "\n…(truncated)"
-    resp = requests.post(WEBHOOK_URL, json={"content": text}, timeout=15)
+    # Discord embed description limit is 4096 chars
+    if len(text) > 4090:
+        text = text[:4090] + "\n…(truncated)"
+    resp = requests.post(
+        WEBHOOK_URL,
+        json={"embeds": [{"description": text}]},
+        timeout=15,
+    )
     resp.raise_for_status()
 
 
