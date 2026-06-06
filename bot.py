@@ -2,6 +2,7 @@ import email
 import json
 import logging
 import os
+import re
 import time
 from email import policy
 from pathlib import Path
@@ -54,17 +55,73 @@ def extract_body(msg: email.message.EmailMessage) -> str:
     return content.strip()
 
 
+_PROBLEM_RE = re.compile(r"^[^\n]*\bProblem:[^\n]*$", re.MULTILINE | re.IGNORECASE)
+_SOLUTION_END_RE = re.compile(
+    r"^[^\n]*\b(?:Prototyping|Our Take)\b[^\n]*:",
+    re.MULTILINE | re.IGNORECASE,
+)
+_LINK_REF_RE = re.compile(r"\[(\d+)\]")
+_LINK_LIST_RE = re.compile(r"^\[(\d+)\]\s+(https?://\S+)", re.MULTILINE)
+
+
+def extract_problem_and_solution(text: str) -> str | None:
+    start = _PROBLEM_RE.search(text)
+    if not start:
+        return None
+    end = _SOLUTION_END_RE.search(text, start.end())
+    if not end:
+        return None
+    return text[start.start() : end.start()].strip()
+
+
+def expand_link_refs(idea: str, full_body: str) -> str:
+    """Replace [N] footnote refs with clickable [[N]](url) markdown using the
+    Links: block at the bottom of the email. Expands from the last ref
+    backward (so the Full Idea Breakdown CTA is prioritized) and stops once
+    another expansion would exceed Discord's description limit."""
+    links = dict(_LINK_LIST_RE.findall(full_body))
+    if not links:
+        return idea
+    refs = list(_LINK_REF_RE.finditer(idea))
+    if not refs:
+        return idea
+
+    current_len = len(idea)
+    expansions: list[tuple[int, int, str]] = []
+    for m in reversed(refs):
+        url = links.get(m.group(1))
+        if not url:
+            continue
+        replacement = f"[[{m.group(1)}]]({url})"
+        added = len(replacement) - (m.end() - m.start())
+        if current_len + added > DISCORD_DESCRIPTION_LIMIT:
+            break
+        current_len += added
+        expansions.append((m.start(), m.end(), replacement))
+
+    expansions.sort(key=lambda e: e[0], reverse=True)
+    result = idea
+    for start, end, replacement in expansions:
+        result = result[:start] + replacement + result[end:]
+    return result
+
+
+DISCORD_DESCRIPTION_LIMIT = 4096
+_TRUNCATION_SUFFIX = "\n…(truncated)"
+
+
 def post_to_discord(text: str) -> None:
     if not text:
         text = "(empty message)"
-    # Discord embed description limit is 4096 chars
-    if len(text) > 4090:
-        text = text[:4090] + "\n…(truncated)"
+    if len(text) > DISCORD_DESCRIPTION_LIMIT:
+        text = text[: DISCORD_DESCRIPTION_LIMIT - len(_TRUNCATION_SUFFIX)] + _TRUNCATION_SUFFIX
     resp = requests.post(
         WEBHOOK_URL,
         json={"embeds": [{"description": text}]},
         timeout=15,
     )
+    if not resp.ok:
+        log.error("discord rejected post: status=%s body=%s", resp.status_code, resp.text)
     resp.raise_for_status()
 
 
@@ -72,7 +129,12 @@ def forward_uid(client: IMAPClient, uid: int) -> None:
     data = client.fetch([uid], ["RFC822"])
     raw = data[uid][b"RFC822"]
     msg = email.message_from_bytes(raw, policy=policy.default)
-    post_to_discord(extract_body(msg))
+    body = extract_body(msg)
+    idea = extract_problem_and_solution(body)
+    if idea is None:
+        log.info("no problem/solution section in uid=%s; skipping", uid)
+        return
+    post_to_discord(expand_link_refs(idea, body))
     log.info("forwarded uid=%s", uid)
 
 
